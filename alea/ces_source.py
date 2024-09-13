@@ -1,5 +1,6 @@
 from typing import Dict, Literal
 import numpy as np
+from copy import deepcopy
 from scipy.interpolate import interp1d
 
 from inference_interface import template_to_multihist
@@ -31,7 +32,15 @@ class CESTemplateSource(HistogramPdfSource):
     def _load_true_histogram(self):
         """Load the true spectrum from the template (no transformation applied)"""
         h = template_to_multihist(self.templatename, self.histname, hist_to_read=Hist1d)
-        return h
+        if self.config.get("zero_filling_for_outlier", False):
+            bins = h.bin_centers
+            inter = interp1d(bins, h.histogram, bounds_error=False, fill_value=0)
+            width = self.ces_space[1] - self.ces_space[0]
+            new_hist = Hist1d(bins=np.arange(0, self.max_e + width, width))
+            new_hist.histogram = inter(new_hist.bin_centers)
+            return new_hist
+        else:
+            return h
 
     def _check_histogram(self, h: Hist1d):
         """Check if the histogram has expected binning."""
