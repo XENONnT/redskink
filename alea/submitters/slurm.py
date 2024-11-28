@@ -1,23 +1,10 @@
 import os
 import time
 import inspect
-
+import socket
 from utilix import batchq
 
 from alea.submitter import Submitter
-
-
-# suggested default arguments for utilix.batchq.submit_job
-# for XENONnT collaboration
-BATCHQ_DEFAULT_ARGUMENTS = {
-    "hours": 1,  # in the unit of hours
-    "mem_per_cpu": 2000,  # in the unit of Mb
-    "container": "xenonnt-development.simg",
-    "partition": "xenon1t",
-    "qos": "xenon1t",
-    "cpus_per_task": 1,
-    "exclude_nodes": "dali[028-030],midway2-0048",
-}
 
 
 class SubmitterSlurm(Submitter):
@@ -39,9 +26,43 @@ class SubmitterSlurm(Submitter):
         self.slurm_configurations = kwargs.get("slurm_configurations", {})
         self.template_path = self.slurm_configurations.pop("template_path", None)
         self.combine_n_jobs = self.slurm_configurations.pop("combine_n_jobs", 1)
-        self.batchq_arguments = {**BATCHQ_DEFAULT_ARGUMENTS, **self.slurm_configurations}
+
+        self._eval_partition()
+        # suggested default arguments for utilix.batchq.submit_job
+        # for XENONnT collaboration
+        batchq_default_arguments = {
+            "hours": 1,  # in the unit of hours
+            "mem_per_cpu": 2000,  # in the unit of Mb
+            "container": "xenonnt-development.simg",
+            "partition": self.partition,
+            "qos": self.qos,
+            "cpus_per_task": 1,
+            "exclude_nodes": self.exclude_nodes,
+        }
+
+        self.batchq_arguments = {
+            **batchq_default_arguments,
+            **self.slurm_configurations,
+        }
         self._check_batchq_arguments()
         super().__init__(*args, **kwargs)
+
+    def _eval_partition(self):
+        # automatically set default partition based on hostname
+        hostname = socket.gethostname()
+        if "midway3" in hostname:
+            self.partition = "lgrandi"
+            self.qos = "lgrandi"
+            self.exclude_nodes = "null"
+        elif "midway2" in hostname or "dali" in hostname:
+            self.partition = "xenon1t"
+            self.qos = "xenon1t"
+            self.exclude_nodes = "dali[028-030],midway2-0048"
+        else:
+            raise ValueError(
+                f"Unknown hostname: {hostname},"
+                f"please specify partition, qos, and exclude_nodes explicitly."
+            )
 
     def _submit(self, job, **kwargs):
         """Submits job to batch queue which actually runs the analysis.
